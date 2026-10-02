@@ -30,7 +30,7 @@ TRANSLATIONS = [
     ('"Form actions"', '"表单操作"'),
     ('"Getting things ready"', '"正在准备..."'),
     ('"HTML\\u2010based file encryption and decryption utility"',
-     '"基于HTML的文件加解密工具"'),
+     '"基于HTML的文件加密解密工具"'),
     ('"Hint"', '"提示"'),
     ('"Message"', '"消息"'),
     ('"Name"', '"名称"'),
@@ -70,6 +70,25 @@ TRANSLATIONS = [
     ('"Made with \\u2764\\ufe0f by "', '"用 \\u2764\\ufe0f 制作，"'),
     ('" Apeleg Limited. All rights reserved."', '" Apeleg 版权所有。"'),
     ('"Build information: "', '"构建信息："'),
+
+    # 运行时错误详情（解密/加密失败时展开显示）
+    ('"Error decrypting file"', '"解密文件时出错"'),
+    ('"Error preparing decryption sandbox"', '"准备解密环境时出错"'),
+    ('"Error decoding task result"', '"解码任务结果时出错"'),
+    ('"Operation must be of string type"', '"操作必须为字符串类型"'),
+    ('"Invalid or empty password"', '"密码无效或为空"'),
+    ('"Invalid iteration count"', '"迭代次数无效"'),
+    ('"Invalid key usage"', '"密钥用途无效"'),
+    ('"Invalid check bytes"', '"校验字节无效"'),
+    ('"Invalid key length"', '"密钥长度无效"'),
+    ('"Missing deriveKek"', '"缺少密钥派生函数"'),
+    ('"Non-existent key"', '"不存在的键"'),
+    ('"attributes is not an array"', '"属性不是数组"'),
+    ('"sandbox is not a function"', '"沙箱不是函数"'),
+    ('"Scripting must be enabled to use this application."',
+     '"必须启用脚本才能使用此应用。"'),
+    ('"Alternatively, you can try decrypting this file using the following command:"',
+     '"或者，您也可以尝试使用以下命令解密此文件："'),
 ]
 
 DISCLAIMER_OLD = (
