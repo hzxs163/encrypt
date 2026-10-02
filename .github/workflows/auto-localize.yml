@@ -1,0 +1,76 @@
+name: 自动同步汉化上游
+
+on:
+  # 每天 UTC 04:30 = 北京时间 12:30 自动检测一次
+  schedule:
+    - cron: "30 4 * * *"
+  # 也可以在 Actions 页面点 Run workflow 手动触发
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 获取上游最新版本
+        id: upstream
+        run: |
+          TAG=$(curl -fsS https://api.github.com/repos/ApelegHQ/ts-cms-ep-sfx/releases/latest \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])")
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "上游最新版本: ${TAG}"
+
+      - name: 对比当前已同步版本
+        id: compare
+        run: |
+          LAST=""
+          if [ -f VERSION ]; then LAST=$(cat VERSION); fi
+          echo "last=${LAST}" >> "$GITHUB_OUTPUT"
+          if [ "${LAST}" = "${{ steps.upstream.outputs.tag }}" ]; then
+            echo "当前已是最新 (${{ steps.upstream.outputs.tag }})，无需更新"
+            echo "run=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "检测到上游新版本: ${{ steps.upstream.outputs.tag }} (当前已同步: ${LAST:-无})"
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 下载上游 encrypt.html
+        if: steps.compare.outputs.run == 'yes'
+        run: |
+          curl -fL -o upstream.html \
+            "https://github.com/ApelegHQ/ts-cms-ep-sfx/releases/download/${{ steps.upstream.outputs.tag }}/encrypt.html"
+          ls -la upstream.html
+
+      - name: 运行汉化脚本
+        if: steps.compare.outputs.run == 'yes'
+        run: |
+          python3 scripts/localize.py upstream.html index.html
+          # 汉化失败时立即中止，不会提交坏文件
+
+      - name: 提交并推送
+        if: steps.compare.outputs.run == 'yes'
+        run: |
+          echo "${{ steps.upstream.outputs.tag }}" > VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html VERSION
+          git commit -m "自动同步汉化上游 ${{ steps.upstream.outputs.tag }}"
+          git push https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 发布 Release
+        if: steps.compare.outputs.run == 'yes'
+        run: |
+          TAG="${{ steps.upstream.outputs.tag }}-zh"
+          gh release create "${TAG}" index.html \
+            --title "汉化版 ${{ steps.upstream.outputs.tag }}" \
+            --notes "自动同步上游 [${{ steps.upstream.outputs.tag }}](https://github.com/ApelegHQ/ts-cms-ep-sfx/releases/tag/${{ steps.upstream.outputs.tag }}) 并完成中文汉化。"
+          echo "已发布: ${TAG}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
