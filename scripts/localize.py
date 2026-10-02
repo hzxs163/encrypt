@@ -30,7 +30,7 @@ TRANSLATIONS = [
     ('"Form actions"', '"表单操作"'),
     ('"Getting things ready"', '"正在准备..."'),
     ('"HTML\\u2010based file encryption and decryption utility"',
-     '"基于HTML的文件加密解密工具"'),
+     '"基于HTML的文件加解密工具"'),
     ('"Hint"', '"提示"'),
     ('"Message"', '"消息"'),
     ('"Name"', '"名称"'),
