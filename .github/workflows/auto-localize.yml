@@ -6,6 +6,12 @@ on:
     - cron: "30 4 * * *"
   # 也可以在 Actions 页面点 Run workflow 手动触发
   workflow_dispatch:
+    inputs:
+      force:
+        description: "强制重新汉化（即使版本未变，用于更新翻译）"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -31,7 +37,12 @@ jobs:
           LAST=""
           if [ -f VERSION ]; then LAST=$(cat VERSION); fi
           echo "last=${LAST}" >> "$GITHUB_OUTPUT"
-          if [ "${LAST}" = "${{ steps.upstream.outputs.tag }}" ]; then
+          FORCE="${{ github.event.inputs.force == 'true' && 'yes' || 'no' }}"
+          echo "force=${FORCE}" >> "$GITHUB_OUTPUT"
+          if [ "${FORCE}" = "yes" ]; then
+            echo "强制重新汉化 (${{ steps.upstream.outputs.tag }})"
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+          elif [ "${LAST}" = "${{ steps.upstream.outputs.tag }}" ]; then
             echo "当前已是最新 (${{ steps.upstream.outputs.tag }})，无需更新"
             echo "run=no" >> "$GITHUB_OUTPUT"
           else
@@ -68,6 +79,8 @@ jobs:
         if: steps.compare.outputs.run == 'yes'
         run: |
           TAG="${{ steps.upstream.outputs.tag }}-zh"
+          # 强制重跑时先删除已存在的同名 Release，保证幂等
+          gh release delete "${TAG}" --yes 2>/dev/null || true
           gh release create "${TAG}" index.html \
             --title "汉化版 ${{ steps.upstream.outputs.tag }}" \
             --notes "自动同步上游 [${{ steps.upstream.outputs.tag }}](https://github.com/ApelegHQ/ts-cms-ep-sfx/releases/tag/${{ steps.upstream.outputs.tag }}) 并完成中文汉化。"
