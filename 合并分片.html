@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分片合并</title>
+<style>
+body{font-family:system-ui,"Microsoft YaHei",sans-serif;margin:0;padding:20px;background:#f6f7f9;color:#1c1e21;line-height:1.6}
+.wrap{max-width:820px;margin:0 auto;background:#fff;border-radius:12px;padding:22px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+h1{font-size:19px;margin:0 0 6px}
+.tip{font-size:13px;color:#61656b;margin:0 0 16px}
+.btn{display:inline-block;background:#2f6fed;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-size:15px;cursor:pointer;margin:0 8px 10px 0}
+.btn.gray{background:#eceef1;color:#333}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+ul{list-style:none;padding:0;margin:6px 0 14px;border:1px solid #e3e6ea;border-radius:8px;overflow:hidden}
+li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #eef0f3;font-size:13px;word-break:break-all}
+li:last-child{border-bottom:0}
+li .no{color:#8a9099;min-width:26px}
+li .nm{flex:1}
+li .sz{color:#61656b;white-space:nowrap}
+li button{border:1px solid #d5d9df;background:#fff;border-radius:6px;padding:2px 7px;cursor:pointer}
+.head{padding:8px 10px;background:#f2f5fa;font-size:13px;color:#4a505a;border-bottom:1px solid #e3e6ea}
+#msg{font-size:13.5px;white-space:pre-wrap;padding:10px 12px;border-radius:8px;margin-top:6px}
+#msg.ok{background:#e8f6ec;color:#1c6b30}
+#msg.bad{background:#fdecec;color:#a12222}
+#msg.warn{background:#fff5e0;color:#8a5a12}
+input[type=file]{position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>分片合并工具</h1>
+  <p class="tip">把网盘下载到的分片（真实文件名的第 0 片 + part-1、part-2 …）一次性选中，本页会自动排序、拼接并校验，然后下载 <b>原名_合并.zip</b>，解压即可。电脑和安卓浏览器都能直接用，文件不上传到任何服务器，全部在本地完成。</p>
+
+  <input type="file" id="pick" multiple>
+  <button class="btn" onclick="document.getElementById('pick').click()">选择分片文件</button>
+  <button class="btn gray" id="go" disabled>合并并下载</button>
+
+  <div id="plan"></div>
+  <div id="msg"></div>
+</div>
+
+<script>
+/*__CORE_START__*/
+function isPartName(n){ return /^part/i.test(n); }
+function partIndex(n){ const d=n.replace(/[^0-9]/g,''); return d===''?null:parseInt(d,10); }
+function stripExt(n){ const i=n.lastIndexOf('.'); return i>0?n.slice(0,i):n; }
+function naturalCmp(a,b){
+  const rx=/\d+|\D+/g;
+  const ta=(a||'').match(rx)||[], tb=(b||'').match(rx)||[];
+  const n=Math.max(ta.length,tb.length);
+  for(let i=0;i<n;i++){
+    const x=ta[i], y=tb[i];
+    if(x===undefined) return -1;
+    if(y===undefined) return 1;
+    const nx=/^\d/.test(x), ny=/^\d/.test(y);
+    if(nx&&ny){ const d=Number(x)-Number(y); if(d) return d>0?1:-1; }
+    else if(nx!==ny){ return nx?-1:1; }
+    else { const s=x.toLowerCase(), u=y.toLowerCase(); if(s<u) return -1; if(s>u) return 1; }
+  }
+  return 0;
+}
+function planMerge(items){
+  const skipped=/^\.|\.html$|合并分片/i;
+  const usable=items.filter(f=>f.size>0 && !skipped.test(f.name) && !/_合并/.test(f.name));
+  const warn=[], err=[];
+  if(!usable.length) return {order:[],warn:['没选中有效文件'],err:['请至少选中 2 个分片'],reason:'empty'};
+  const byZip=usable.filter(f=>f.isZip);
+  const parts=usable.filter(f=>isPartName(f.name)).map(f=>({f,i:partIndex(f.name)})).filter(p=>p.i!==null);
+
+  let order=[], zero=null, note='';
+  if(parts.length>=1){
+    parts.sort((a,b)=>a.i-b.i || naturalCmp(a.f.name,b.f.name));
+    const idxs=parts.map(p=>p.i), min=idxs[0], max=idxs[idxs.length-1];
+    const miss=[]; for(let i=min;i<=max;i++) if(!idxs.includes(i)) miss.push(i);
+    if(miss.length) err.push('分片序号中间缺号：'+miss.join('、')+'（应有 '+(max-min+1)+' 个，只找到 '+parts.length+' 个），为避免合出坏文件已停止。');
+    if(!parts[0].f.isZip){
+      const cs=parts[0].f.size;
+      const cands=byZip.filter(f=>!isPartName(f.name));
+      zero=cands.find(f=>f.size===cs) || cands[0] || null;
+      if(zero){ note='第 '+min+' 片不是文件开头，已把「'+zero.name+'」当作第 0 片排在最前'+(cands.length>1?'（有多个候选，取大小与分片一致的那个）':'')+'。'; }
+      else if(byZip.length===0){ err.push('没找到任何以 PK 开头的文件头分片：请确认第 0 片（用真实文件名命名的那片）也一起选中了。'); }
+      else err.push('第 '+min+' 片不是文件开头，且其余选中项里也没有 PK 开头的第 0 片。');
+    } else note='最小序号那片就是文件开头，按 part 序号从小到大拼接。';
+    order=(zero?[zero]:[]).concat(parts.map(p=>p.f));
+  } else {
+    const sorted=byZip.slice();
+    const rest=usable.filter(f=>!f.isZip).sort((a,b)=>naturalCmp(a.name,b.name));
+    if(sorted.length>1) warn.push('有多个 PK 开头的文件，请确认第 0 片排在最前（可用上移按钮调整）。');
+    order=sorted.concat(rest);
+    note='选中项里没有 part 命名的分片，已按「PK 文件头优先 + 名称数字顺序」排列。';
+  }
+  if(order.length<2) err.push('至少需要 2 个分片才能合并（当前只识别到 '+order.length+' 个）。');
+  let stem=zero?stripExt(zero.name):stripExt((order[0]&&order[0].name)||'');
+  if(!zero && /^(part|分片|卷|zip)/i.test(stem)) stem=stem.replace(/[\s._-]*\d+$/,'').replace(/(part|分片|卷|zip)$/i,'').replace(/[-_. (]+$/,'');
+  return {order, warn, err, note, out: (stem||'合并结果')+'_合并.zip', total:order.reduce((s,f)=>s+f.size,0)};
+}
+function findEOCD(buf){
+  for(let i=buf.length-22;i>=Math.max(0,buf.length-66000);i--){
+    if(buf[i]===0x50&&buf[i+1]===0x4b&&buf[i+2]===0x05&&buf[i+3]===0x06){
+      return {entries:buf[i+10]|(buf[i+11]<<8), size:i+22};
+    }
+  }
+  return null;
+}
+/*__CORE_END__*/
+
+let picked=[];
+const $=id=>document.getElementById(id);
+function headIsZip(f){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(new Uint8Array(r.result)[0]===0x50&&new Uint8Array(r.result)[1]===0x4b); r.onerror=()=>res(false); r.readAsArrayBuffer(f.slice(0,2)); }); }
+async function analyze(){
+  const flags=await Promise.all(picked.map(headIsZip));
+  return planMerge(picked.map((f,i)=>({name:f.name,size:f.size,file:f,isZip:flags[i]})));
+}
+function render(plan){
+  $('plan').innerHTML = plan.order.length ? '<div class="head">合并顺序（共 '+plan.order.length+' 个，'+plan.total.toLocaleString()+' 字节）　'+(plan.note||'')+'</div><ul>'+
+    plan.order.map((f,i)=>'<li><span class="no">'+(i+1)+'.</span><span class="nm">'+f.name+'</span><span class="sz">'+f.size.toLocaleString()+'</span>'+
+      '<button onclick="move('+i+',-1)">↑</button><button onclick="move('+i+',1)">↓</button><button onclick="dropFile('+i+')">移除</button></li>').join('')+'</ul>' : '';
+  $('go').disabled = !(plan.err.length===0 && plan.order.length>=2);
+  msg(plan);
+}
+function msg(p){
+  const box=$('msg');
+  if(p.err.length){ box.className='bad'; box.textContent=p.err.join('\n'); return; }
+  if(p.warn.length){ box.className='warn'; box.textContent=p.warn.join('\n'); return; }
+  box.className=''; box.textContent='';
+}
+function move(i,d){ const j=i+d; if(j<0||j>=picked.length) return; [picked[i],picked[j]]=[picked[j],picked[i]]; analyze().then(render); }
+function dropFile(i){ picked.splice(i,1); analyze().then(render); }
+$('pick').addEventListener('change',e=>{ picked=[...e.target.files]; if(picked.length) analyze().then(render); });
+
+async function doMerge(){
+  const plan=await analyze();
+  if(plan.err.length){ msg(plan); return; }
+  $('go').disabled=true;
+  const box=$('msg'); box.className='warn'; box.textContent='正在合并 '+plan.order.length+' 个分片...';
+  try{
+    const blob=new Blob(plan.order.map(f=>f.file));
+    if(blob.size!==plan.total) throw '大小不符：合成 '+blob.size+'，应为 '+plan.total;
+    const tail=new Uint8Array(await blob.slice(Math.max(0,blob.size-66000)).arrayBuffer());
+    const eo=findEOCD(tail);
+    const head=new Uint8Array(await blob.slice(0,2).arrayBuffer());
+    if(!(head[0]===0x50&&head[1]===0x4b)) throw '合成文件开头不是 PK，可能顺序不对';
+    if(!eo) throw '没找到压缩包结尾标记（EOCD），分片可能不全或顺序不对';
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=plan.out; document.body.appendChild(a); a.click(); a.remove();
+    box.className='ok';
+    box.textContent='完成：'+plan.out+'   '+blob.size.toLocaleString()+' 字节，压缩包结构校验通过（条目 '+eo.entries+' 个）。请在下载列表里打开它解压。';
+  }catch(e){ box.className='bad'; box.textContent='[错误] '+e+' 可以用 ↑↓ 调整顺序或重新选择后再试。'; }
+  $('go').disabled=false;
+}
+$('go').addEventListener('click',doMerge);
+</script>
+</body>
+</html>
